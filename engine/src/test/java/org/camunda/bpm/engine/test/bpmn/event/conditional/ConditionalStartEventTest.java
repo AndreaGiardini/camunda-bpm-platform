@@ -18,6 +18,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.util.HashMap;
 import java.util.List;
@@ -28,6 +29,7 @@ import org.camunda.bpm.engine.RepositoryService;
 import org.camunda.bpm.engine.RuntimeService;
 import org.camunda.bpm.engine.impl.event.EventType;
 import org.camunda.bpm.engine.impl.persistence.entity.EventSubscriptionEntity;
+import org.camunda.bpm.engine.repository.DeploymentWithDefinitions;
 import org.camunda.bpm.engine.repository.ProcessDefinition;
 import org.camunda.bpm.engine.runtime.EventSubscription;
 import org.camunda.bpm.engine.runtime.ProcessInstance;
@@ -41,7 +43,6 @@ import org.camunda.bpm.engine.variable.Variables;
 import org.camunda.bpm.model.bpmn.Bpmn;
 import org.camunda.bpm.model.bpmn.BpmnModelInstance;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
@@ -49,10 +50,18 @@ import org.junit.rules.RuleChain;
 
 public class ConditionalStartEventTest {
 
+  private static final String SINGLE_CONDITIONAL_START_EVENT_XML = "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent.bpmn20.xml";
   private static final String SINGLE_CONDITIONAL_XML = "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent1.bpmn20.xml";
+  private static final String TRUE_CONDITION_START_XML = "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testStartInstanceWithTrueConditionalStartEvent.bpmn20.xml";
+  private static final String TWO_EQUAL_CONDITIONAL_START_EVENT_XML = "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testTwoEqualConditionalStartEvent.bpmn20.xml";
+  private static final String MULTIPLE_CONDITION_XML = "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testMultipleCondition.bpmn20.xml";
+  private static final String START_INSTANCE_WITH_VARIABLE_NAME_XML = "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testStartInstanceWithVariableName.bpmn20.xml";
+  private static final String ONE_TASK_PROCESS = "org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml";
+
   private static final String MULTIPLE_CONDITIONS = "multipleConditions";
   private static final String TRUE_CONDITION_PROCESS = "trueConditionProcess";
   private static final String CONDITIONAL_EVENT_PROCESS = "conditionalEventProcess";
+
   private static final BpmnModelInstance MODEL_WITHOUT_CONDITION = Bpmn.createExecutableProcess(CONDITIONAL_EVENT_PROCESS)
       .startEvent()
       .userTask()
@@ -79,7 +88,7 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Deployment(resources = "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent.bpmn20.xml")
+  @Deployment(resources = SINGLE_CONDITIONAL_START_EVENT_XML)
   public void testDeploymentCreatesSubscriptions() {
     // given a deployed process
     String processDefinitionId = repositoryService.createProcessDefinitionQuery().processDefinitionKey(CONDITIONAL_EVENT_PROCESS).singleResult().getId();
@@ -98,7 +107,7 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Deployment(resources = "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent.bpmn20.xml")
+  @Deployment(resources = SINGLE_CONDITIONAL_START_EVENT_XML)
   public void testUpdateProcessVersionCancelsSubscriptions() {
     // given a deployed process
     List<EventSubscription> eventSubscriptions = runtimeService.createEventSubscriptionQuery().list();
@@ -108,7 +117,7 @@ public class ConditionalStartEventTest {
     assertEquals(1, processDefinitions.size());
 
     // when
-    testRule.deploy("org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent.bpmn20.xml");
+    testRule.deploy(SINGLE_CONDITIONAL_START_EVENT_XML);
 
     // then
     List<EventSubscription> newEventSubscriptions = runtimeService.createEventSubscriptionQuery().list();
@@ -133,8 +142,7 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Ignore("CAM-8666")
-  @Deployment(resources = "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent.bpmn20.xml")
+  @Deployment(resources = SINGLE_CONDITIONAL_START_EVENT_XML)
   public void testEventSubscriptionAfterDeleteLatestProcessVersion() {
     // given a deployed process
     ProcessDefinition processDefinitionV1 = repositoryService.createProcessDefinitionQuery().singleResult();
@@ -156,8 +164,32 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Ignore("CAM-8666")
-  @Deployment(resources = "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent.bpmn20.xml")
+  @Deployment(resources = SINGLE_CONDITIONAL_START_EVENT_XML)
+  public void testStartInstanceAfterDeleteLatestProcessVersionByIds() {
+    // given a deployed process
+
+    // deploy second version of the process
+    DeploymentWithDefinitions deployment = testRule.deploy(SINGLE_CONDITIONAL_XML);
+    ProcessDefinition processDefinition = deployment.getDeployedProcessDefinitions().get(0);
+
+    // delete it
+    repositoryService.deleteProcessDefinitions()
+      .byIds(processDefinition.getId())
+      .delete();
+
+    // when
+    List<ProcessInstance> conditionInstances = runtimeService
+        .createConditionEvaluation()
+        .setVariable("foo", 1)
+        .evaluateStartConditions();
+
+    // then
+    assertEquals(1, conditionInstances.size());
+    assertNotNull(conditionInstances.get(0));
+  }
+
+  @Test
+  @Deployment(resources = SINGLE_CONDITIONAL_START_EVENT_XML)
   public void testStartInstanceAfterDeleteLatestProcessVersion() {
     // given a deployed process
 
@@ -180,7 +212,6 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Ignore("CAM-8666")
   public void testVersionWithoutConditionAfterDeleteLatestProcessVersionWithCondition() {
     // given a process
     testRule.deploy(MODEL_WITHOUT_CONDITION);
@@ -203,7 +234,6 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Ignore("CAM-8666")
   public void testSubscriptionsWhenDeletingProcessDefinitionsInOneTransactionByKeys() {
     // given three versions of the process
     testRule.deploy(SINGLE_CONDITIONAL_XML);
@@ -220,7 +250,44 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Ignore("CAM-8666")
+  public void testSubscriptionsWhenDeletingGroupsProcessDefinitionsByIds() {
+    // given
+    String processDefId11 = deployProcess(SINGLE_CONDITIONAL_XML);
+    String processDefId12 = deployProcess(SINGLE_CONDITIONAL_XML);
+    String processDefId13 = testRule.deployAndGetDefinition(MODEL_WITHOUT_CONDITION).getId();
+
+    String processDefId21 = deployProcess(
+        TRUE_CONDITION_START_XML);
+    String processDefId22 = deployProcess(
+        TRUE_CONDITION_START_XML);
+    String processDefId23 = deployProcess(
+        TRUE_CONDITION_START_XML);
+
+    String processDefId31 = deployProcess(ONE_TASK_PROCESS);
+    @SuppressWarnings("unused")
+    String processDefId32 = deployProcess(ONE_TASK_PROCESS);
+
+    // assume
+    assertEquals(1, runtimeService.createEventSubscriptionQuery().count());
+
+    // when
+    repositoryService.deleteProcessDefinitions()
+      .byIds(processDefId21,processDefId23,processDefId13,
+          processDefId12,processDefId31)
+      .delete();
+
+    // then
+    List<EventSubscription> list = runtimeService.createEventSubscriptionQuery().list();
+    assertEquals(2, list.size());
+    for (EventSubscription eventSubscription : list) {
+      EventSubscriptionEntity eventSubscriptionEntity = (EventSubscriptionEntity) eventSubscription;
+      if (!eventSubscriptionEntity.getConfiguration().equals(processDefId11) && !eventSubscriptionEntity.getConfiguration().equals(processDefId22)) {
+        fail("This process definition '" + eventSubscriptionEntity.getConfiguration() + "' and the respective event subscription should not exist.");
+      }
+    }
+  }
+
+  @Test
   public void testSubscriptionsWhenDeletingProcessDefinitionsInOneTransactionByIdOrdered() {
     // given
     String definitionId1 = deployProcess(SINGLE_CONDITIONAL_XML);
@@ -237,7 +304,6 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Ignore("CAM-8666")
   public void testSubscriptionsWhenDeletingProcessDefinitionsInOneTransactionByIdReverseOrder() {
     // given
     String definitionId1 = deployProcess(SINGLE_CONDITIONAL_XML);
@@ -254,7 +320,6 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Ignore("CAM-8666")
   public void testMixedSubscriptionsWhenDeletingProcessDefinitionsInOneTransactionById1() {
     // given first version without condition
     String definitionId1 = deployModel(MODEL_WITHOUT_CONDITION);
@@ -271,7 +336,6 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Ignore("CAM-8666")
   public void testMixedSubscriptionsWhenDeletingProcessDefinitionsInOneTransactionById2() {
     // given second version without condition
     String definitionId1 = deployProcess(SINGLE_CONDITIONAL_XML);
@@ -288,7 +352,6 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Ignore("CAM-8666")
   public void testMixedSubscriptionsWhenDeletingProcessDefinitionsInOneTransactionById3() {
     // given third version without condition
     String definitionId1 = deployProcess(SINGLE_CONDITIONAL_XML);
@@ -305,7 +368,6 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Ignore("CAM-8666")
   public void testMixedSubscriptionsWhenDeletingTwoProcessDefinitionsInOneTransaction1() {
     // given first version without condition
     String definitionId1 = deployModel(MODEL_WITHOUT_CONDITION);
@@ -323,7 +385,6 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Ignore("CAM-8666")
   public void testMixedSubscriptionsWhenDeletingTwoProcessDefinitionsInOneTransaction2() {
     // given second version without condition
     String definitionId1 = deployProcess(SINGLE_CONDITIONAL_XML);
@@ -341,7 +402,6 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Ignore("CAM-8666")
   public void testMixedSubscriptionsWhenDeletingTwoProcessDefinitionsInOneTransaction3() {
     // given third version without condition
     String definitionId1 = deployProcess(SINGLE_CONDITIONAL_XML);
@@ -362,7 +422,6 @@ public class ConditionalStartEventTest {
    * Tests the case, when no new subscription is needed, as it is not the latest version, that is being deleted.
    */
   @Test
-  @Ignore("CAM-8666")
   public void testDeleteNotLatestVersion() {
     @SuppressWarnings("unused")
     String definitionId1 = deployProcess(SINGLE_CONDITIONAL_XML);
@@ -383,7 +442,6 @@ public class ConditionalStartEventTest {
    * Tests the case when the previous of the previous version will be needed.
    */
   @Test
-  @Ignore("CAM-8666")
   public void testSubscribePreviousPreviousVersion() {
 
     String definitionId1 = deployProcess(SINGLE_CONDITIONAL_XML);
@@ -407,7 +465,7 @@ public class ConditionalStartEventTest {
     thrown.expectMessage("Cannot have more than one conditional event subscription with the same condition '${variable == 1}'");
 
     // when
-    testRule.deploy("org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testTwoEqualConditionalStartEvent.bpmn20.xml");
+    testRule.deploy(TWO_EQUAL_CONDITIONAL_START_EVENT_XML);
 
     List<EventSubscription> eventSubscriptions = runtimeService.createEventSubscriptionQuery().list();
     assertEquals(0, eventSubscriptions.size());
@@ -433,7 +491,7 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Deployment(resources = "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent.bpmn20.xml")
+  @Deployment(resources = SINGLE_CONDITIONAL_START_EVENT_XML)
   public void testStartInstanceWithVariableCondition() {
     // given a deployed process
 
@@ -452,7 +510,7 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Deployment(resources = "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent.bpmn20.xml")
+  @Deployment(resources = SINGLE_CONDITIONAL_START_EVENT_XML)
   public void testStartInstanceWithTransientVariableCondition() {
     // given a deployed process
     VariableMap variableMap = Variables.createVariables()
@@ -472,7 +530,7 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Deployment(resources = "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent.bpmn20.xml")
+  @Deployment(resources = SINGLE_CONDITIONAL_START_EVENT_XML)
   public void testStartInstanceWithoutResult() {
     // given a deployed process
 
@@ -490,7 +548,7 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Deployment(resources = "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testMultipleCondition.bpmn20.xml")
+  @Deployment(resources = MULTIPLE_CONDITION_XML)
   public void testStartInstanceWithMultipleConditions() {
     // given a deployed process with three conditional start events
     List<EventSubscription> eventSubscriptions = runtimeService.createEventSubscriptionQuery().list();
@@ -518,9 +576,9 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Deployment(resources = { "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent.bpmn20.xml",
-                            "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testMultipleCondition.bpmn20.xml",
-                            "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testStartInstanceWithTrueConditionalStartEvent.bpmn20.xml" })
+  @Deployment(resources = { SINGLE_CONDITIONAL_START_EVENT_XML,
+                            MULTIPLE_CONDITION_XML,
+                            TRUE_CONDITION_START_XML })
   public void testStartInstanceWithMultipleSubscriptions() {
     // given three deployed processes
     List<EventSubscription> eventSubscriptions = runtimeService.createEventSubscriptionQuery().list();
@@ -542,9 +600,9 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Deployment(resources = { "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent.bpmn20.xml",
-                            "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testMultipleCondition.bpmn20.xml",
-                            "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testStartInstanceWithTrueConditionalStartEvent.bpmn20.xml" })
+  @Deployment(resources = { SINGLE_CONDITIONAL_START_EVENT_XML,
+                            MULTIPLE_CONDITION_XML,
+                            TRUE_CONDITION_START_XML })
   public void testStartInstanceWithMultipleSubscriptionsWithoutProvidingAllVariables() {
     // given three deployed processes
     List<EventSubscription> eventSubscriptions = runtimeService.createEventSubscriptionQuery().list();
@@ -565,8 +623,7 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Deployment(resources = { "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent.bpmn20.xml",
-                            "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testMultipleCondition.bpmn20.xml"})
+  @Deployment(resources = { SINGLE_CONDITIONAL_START_EVENT_XML, MULTIPLE_CONDITION_XML })
   public void testStartInstanceWithBusinessKey() {
     // given two deployed processes
     List<EventSubscription> eventSubscriptions = runtimeService.createEventSubscriptionQuery().list();
@@ -586,8 +643,7 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Deployment(resources = { "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent.bpmn20.xml",
-                            "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testStartInstanceWithTrueConditionalStartEvent.bpmn20.xml" })
+  @Deployment(resources = { SINGLE_CONDITIONAL_START_EVENT_XML, TRUE_CONDITION_START_XML })
   public void testStartInstanceByProcessDefinitionId() {
     // given two deployed processes
     List<EventSubscription> eventSubscriptions = runtimeService.createEventSubscriptionQuery().list();
@@ -609,8 +665,7 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Deployment(resources = { "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent.bpmn20.xml",
-                            "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testMultipleCondition.bpmn20.xml"})
+  @Deployment(resources = { SINGLE_CONDITIONAL_START_EVENT_XML, MULTIPLE_CONDITION_XML})
   public void testStartInstanceByProcessDefinitionFirstVersion() {
     // given two deployed processes
     String processDefinitionId = repositoryService.createProcessDefinitionQuery().processDefinitionKey(CONDITIONAL_EVENT_PROCESS).singleResult().getId();
@@ -620,7 +675,7 @@ public class ConditionalStartEventTest {
     assertEquals(4, eventSubscriptions.size());
 
     // when deploy another version
-    testRule.deploy("org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent.bpmn20.xml");
+    testRule.deploy(SINGLE_CONDITIONAL_START_EVENT_XML);
 
     List<ProcessInstance> instances = runtimeService
         .createConditionEvaluation()
@@ -634,8 +689,7 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Deployment(resources = { "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testSingleConditionalStartEvent.bpmn20.xml",
-                            "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testStartInstanceWithTrueConditionalStartEvent.bpmn20.xml" })
+  @Deployment(resources = { SINGLE_CONDITIONAL_START_EVENT_XML, TRUE_CONDITION_START_XML })
   public void testStartInstanceByNonExistingProcessDefinitionId() {
     // given two deployed processes
     List<EventSubscription> eventSubscriptions = runtimeService.createEventSubscriptionQuery().list();
@@ -654,7 +708,7 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Deployment(resources = {"org/camunda/bpm/engine/test/api/oneTaskProcess.bpmn20.xml"})
+  @Deployment(resources = { ONE_TASK_PROCESS })
   public void testStartInstanceByProcessDefinitionIdWithoutCondition() {
     // given deployed process without conditional start event
     String processDefinitionId = repositoryService.createProcessDefinitionQuery().processDefinitionKey("oneTaskProcess").singleResult().getId();
@@ -695,7 +749,7 @@ public class ConditionalStartEventTest {
   }
 
   @Test
-  @Deployment(resources = "org/camunda/bpm/engine/test/bpmn/event/conditional/ConditionalStartEventTest.testStartInstanceWithVariableName.bpmn20.xml")
+  @Deployment(resources = START_INSTANCE_WITH_VARIABLE_NAME_XML)
   public void testStartInstanceWithVariableNameNotFullfilled() {
     // given deployed process
     // ${true} variableName="foo"
